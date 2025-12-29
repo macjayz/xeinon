@@ -48,23 +48,24 @@ npm run dev
 - Edit files directly within the Codespace and commit and push your changes once you're done.
 
 **How Xeinon Works (High-Level)**
-	1.	On-chain detection
-	•	WebSocket listeners monitor factory events (e.g. Zora)
-	•	Bytecode scanning backfills missed contracts
-	2.	Canonical indexing
-	•	All detections pass through a raw intake layer
-	•	Tokens are normalized into a single canonical record
-	3.	Lifecycle tracking
-	•	Tokens move through stages:
+    1. On-chain detection
+        - WebSocket listeners monitor factory events (e.g. Zora)
+        - Bytecode scanning backfills missed contracts
 
-created → discovered → priced → liquid → traded → dead
-	4.	Market enrichment
-	•	Price, volume, liquidity, and holders are attached once available
-	5.	Frontend classification
-	•	Pending tokens = early discovery
-	•	Active tokens = real market activity
+    2. Canonical indexing
+        - All detections pass through a raw intake layer
+        - Tokens are normalized into a single canonical record
 
-**Tech Stack**
+    3. Lifecycle tracking
+        - Tokens move through stages:
+        created → discovered → priced → liquid → traded → dead
+        
+    4. Market enrichment
+        - Price, volume, liquidity, and holders are attached once available
+
+    5. Frontend classification
+        - Pending tokens — early discovery
+        - Active tokens — real market activity
 
 This project is built with:
 	•	Vite
