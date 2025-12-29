@@ -1,0 +1,22 @@
+project_id = "hwujkefkweovhqxxvnoj"
+
+[functions.index-token]
+verify_jwt = false
+
+[functions.index-tokens]
+verify_jwt = false
+
+[functions.fetch-prices]
+verify_jwt = false
+
+[functions.api-tokens]
+verify_jwt = false
+
+[functions.realtime-indexer]
+verify_jwt = false
+
+[functions.bytecode-scan]
+verify_jwt = false
+
+[functions.backfill-tokens]
+verify_jwt = false
