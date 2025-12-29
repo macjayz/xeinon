@@ -17,6 +17,9 @@ npm i
 npm run dev
 ```
 
+# demo
+https://xeinon.com
+
 **Edit a file directly in GitHub**
 
 - Navigate to the desired file(s).
