@@ -1,78 +1,64 @@
-# Welcome to Xeinon
+# Xeinon
 
-Xeinon is a real-time on-chain discovery platform that detects, indexes, and tracks newly created tokens on Base — including creator coins, factory-deployed tokens, and contracts discovered via bytecode scanning.
+**Real-time token discovery and indexing on Base.** Xeinon indexes new tokens from the block they are deployed, before they reach DEX aggregators, and then tracks each one through its lifecycle as price, liquidity and trading data arrive.
 
-Unlike traditional token trackers that rely only on DEX listings, Xeinon surfaces tokens from the moment they are created, then continuously enriches them as pricing, liquidity, and trading data becomes available.
+Live: [xeinon.com](https://xeinon.com)
 
-What Xeinon does:
-	•	Detects new token deployments in real time (WebSocket + backfill)
-	•	Indexes factory-created and non-factory tokens
-	•	Classifies tokens by lifecycle stage (created → traded)
-	•	Tracks market data once available (price, volume, liquidity)
-	•	Separates recently detected tokens from actively traded ones
-	•	Provides a clean, Dex-style interface before tokens hit major DEXs
+## Architecture
 
-# Demo
-Live demo: https://xeinon.com
+```mermaid
+flowchart LR
+    WS["realtime-indexer\n(WebSocket, Zora CoinCreated logs)"] --> DET
+    BF["backfill-tokens\n(Zora API, cursor-paginated)"] --> DET
+    BC["bytecode-scan\n(contract creations matched\nagainst ERC-20 fingerprints)"] --> DET
+    DET[("token_detections\nraw, append-only queue")] --> IDX["index-token(s)\nnormalize + dedupe"]
+    IDX --> TOK[("tokens\ncanonical records")]
+    IDX --> PROV[("token_provenance\nwhich source saw it, primary flag")]
+    PR["fetch-prices\n(Zora API, DexScreener fallback)"] --> STATS[("token_stats / token_history")]
+    STATS --> STAGE[("token_stage_history")]
+    TOK --> API["api-tokens\nlist / search / detail"]
+    STATS --> API
+    API --> UI["React + wagmi UI\n(realtime updates)"]
+```
 
+Everything server-side runs as Supabase Edge Functions (Deno) against PostgreSQL. `tokens` and `token_stats` are published to Supabase Realtime, so the UI updates live.
 
-# Installation
-Follow these steps:
+## Design decisions
+
+- **Raw detections are kept separate from canonical tokens.** Three sources can each see the same token: the real-time WebSocket, the historical backfill and the bytecode scanner. Each writes to `token_detections`, a queue with a partial index on unprocessed rows. Only the indexer writes to `tokens`. This keeps ingestion cheap and idempotent, and leaves deduplication to a single place.
+- **Provenance is stored, not overwritten.** `token_provenance` records every source that detected a token and marks one as primary. This makes it possible to answer "how did we find this token, and how early?"
+- **Lifecycle is an explicit state machine.** A `token_stage` enum moves `created → discovered → priced → liquid → traded → dead`, and every transition is logged in `token_stage_history`. The UI separates "recently detected" from "actively traded" based on stage, not guesswork.
+- **Bytecode fingerprints live in data, not code.** The scanner matches contract bytecode against ERC-20 selector sets stored in `bytecode_fingerprints`, requiring 75% of selectors to match. New token standards can be added without a redeploy. A hardcoded selector check serves as the fallback.
+- **Enrichment degrades gracefully.** Prices come from the Zora API with DexScreener as fallback, using exponential backoff with jitter on `429`. Liquidity records whether it came from a DEX or an estimate (`liquidity_source`).
+
+## Data model
+
+| Table | Role |
+|---|---|
+| `token_detections` | Raw detection queue, one row per sighting per source |
+| `tokens` | Canonical token: platform, creator, creation tx/block/log index, stage, source |
+| `token_provenance` | Every source that saw the token; the primary source is flagged |
+| `token_stats` / `token_history` | Current market data, plus a time series for charts |
+| `token_stage_history` | Audit trail of lifecycle transitions |
+| `creator_profiles`, `users`, `transactions` | Creator metadata, wallet-linked users, trade log |
+
+## Known limitations
+
+- Platform coverage is Zora-first. Clanker, Flaunch and Mint Club are modelled in the `token_platform` enum but not fully wired up.
+- The `users` and `transactions` tables currently allow anonymous inserts under RLS. Writes should move behind wallet-signature-verified edge functions.
+- There are no automated tests yet. The next step is integration tests for the detection → index path, plus replaying recorded logs.
+
+## Stack
+
+TypeScript · React · Vite · wagmi · Supabase (PostgreSQL, Edge Functions, Realtime) · Base / EVM
+
+## Run locally
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+git clone https://github.com/macjayz/xeinon.git
+cd xeinon
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
-
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-**How Xeinon Works (High-Level)**
-    1. On-chain detection
-        - WebSocket listeners monitor factory events (e.g. Zora)
-        - Bytecode scanning backfills missed contracts
-
-    2. Canonical indexing
-        - All detections pass through a raw intake layer
-        - Tokens are normalized into a single canonical record
-
-    3. Lifecycle tracking
-        - Tokens move through stages:
-        created → discovered → priced → liquid → traded → dead
-        
-    4. Market enrichment
-        - Price, volume, liquidity, and holders are attached once available
-
-    5. Frontend classification
-        - Pending tokens — early discovery
-        - Active tokens — real market activity
-
-This project is built with:
-	•	Vite
-	•	TypeScript
-	•	React
-	•	shadcn/ui
-	•	Tailwind CSS
-	•	Supabase (Postgres + Realtime)
-	•	On-chain WebSockets & indexers
-
+The edge functions need `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, plus an RPC WebSocket URL for `realtime-indexer` and, optionally, `ZORA_API_KEY`. Set these as Supabase function secrets.
